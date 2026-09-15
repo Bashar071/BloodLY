@@ -1,0 +1,6 @@
+opencv-python
+pyzbar
+flask
+google-genai
+pillow
+numpy

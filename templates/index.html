@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Blood Tube Dashboard</title>
+<style>
+  body { font-family: -apple-system, Arial, sans-serif; background:#0f1115; color:#eee; margin:0; padding:2rem; }
+  h1 { font-weight: 600; }
+  .status { font-size: 0.9rem; color: #999; margin-bottom: 1.5rem; }
+  .status.ok { color: #4ade80; }
+  .status.bad { color: #f87171; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+  .card { background:#1b1e26; border-radius: 12px; padding: 1.2rem; }
+  .card .count { font-size: 2.2rem; font-weight: 700; }
+  .card .label { color: #aaa; font-size: 0.9rem; }
+  table { width:100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align:left; padding: 0.5rem; border-bottom: 1px solid #2a2d36; }
+  .conf-high { color:#4ade80; } .conf-medium { color:#fbbf24; } .conf-low { color:#f87171; }
+</style>
+</head>
+<body>
+  <h1>Blood Tube Dashboard</h1>
+  <div id="status" class="status">Connecting...</div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="count" id="total">-</div>
+      <div class="label">Total tubes detected</div>
+    </div>
+  </div>
+
+  <div class="grid" id="categoryGrid"></div>
+
+  <h3>Detected tubes (this frame)</h3>
+  <table>
+    <thead><tr><th>Category</th><th>Source</th><th>Confidence</th></tr></thead>
+    <tbody id="tubeRows"></tbody>
+  </table>
+
+<script>
+async function refresh() {
+  try {
+    const res = await fetch('/api/counts');
+    const data = await res.json();
+
+    const statusEl = document.getElementById('status');
+    statusEl.textContent = data.camera_ok
+      ? `Live — last updated ${data.last_updated}`
+      : 'Camera not detected — check server console';
+    statusEl.className = 'status ' + (data.camera_ok ? 'ok' : 'bad');
+
+    document.getElementById('total').textContent = data.total_tubes;
+
+    const grid = document.getElementById('categoryGrid');
+    grid.innerHTML = '';
+    for (const [cat, count] of Object.entries(data.by_category)) {
+      grid.innerHTML += `<div class="card"><div class="count">${count}</div><div class="label">${cat}</div></div>`;
+    }
+
+    const rows = document.getElementById('tubeRows');
+    rows.innerHTML = data.tubes.map(t =>
+      `<tr><td>${t.category}</td><td>${t.source}</td><td class="conf-${t.confidence}">${t.confidence}</td></tr>`
+    ).join('');
+  } catch (e) {
+    console.error(e);
+  }
+}
+setInterval(refresh, {{ refresh_ms }});
+refresh();
+</script>
+</body>
+</html> 
