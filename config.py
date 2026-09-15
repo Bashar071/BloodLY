@@ -14,16 +14,18 @@ PROCESS_EVERY_N_FRAMES = 5
 THRESHOLD_VALUE = 60
 MIN_TUBE_AREA = 800
 MAX_TUBE_AREA = 50000
-CAP_REGION_FRACTION = 0.25
 
 # --- Cap color categories ---
 CAP_COLOR_RANGES = {
-    "Type A (Red Cap)":     {"lower": (0, 120, 70),   "upper": (10, 255, 255)},
-    "Type B (Blue Cap)":    {"lower": (100, 120, 70), "upper": (130, 255, 255)},
-    "Type AB (Yellow Cap)": {"lower": (20, 120, 70),  "upper": (35, 255, 255)},
-    "Type O (Green Cap)":   {"lower": (45, 120, 70),  "upper": (75, 255, 255)},
+    "A+":  [{"lower": (0, 90, 60), "upper": (8, 255, 255)},
+            {"lower": (170, 90, 60), "upper": (180, 255, 255)}],  # red
+    "B+":  {"lower": (95, 90, 60), "upper": (130, 255, 255)},     # blue
+    "AB+": {"lower": (18, 90, 60), "upper": (35, 255, 255)},      # yellow
+    "O+":  {"lower": (40, 90, 60), "upper": (85, 255, 255)},      # green
 }
-MIN_COLOR_MATCH_RATIO = 0.35
+MIN_COLOR_MATCH_RATIO = 0.10   # a cap can occupy only a small part of the bottle crop
+CAP_REGION_FRACTION = 0.35     # prioritize the cap while still seeing colored bottle bodies
+
 
 # --- Barcode ---
 ENABLE_BARCODE = True
@@ -37,3 +39,17 @@ GEMINI_CACHE_TTL_SECONDS = 300
 FLASK_HOST = "0.0.0.0"
 FLASK_PORT = 5000
 DASHBOARD_REFRESH_MS = 1500
+
+# --- Bottle vs. tube validation ---
+# A detected object only counts as a "blood tube" if its cap color matches
+# one of CAP_COLOR_RANGES above (or has a valid barcode). Anything else is
+# shown separately as "unrecognized" and excluded from the blood tally.
+# This is what lets plain water bottles (used as tube stand-ins in your
+# demo) be filtered out automatically based on cap color alone.
+EXCLUDE_UNKNOWN_FROM_COUNT = True
+
+# Loosen the shape filter slightly since standard water bottles are a bit
+# wider relative to height than real lab tubes.
+BOTTLE_MIN_ASPECT_RATIO = 1.0   # height must be at least this many times the width
+
+MIN_SOLIDITY = 0.65  # 0-1. Keep irregular bottle silhouettes so they can be classified

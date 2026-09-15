@@ -6,67 +6,147 @@
 <style>
   body { font-family: -apple-system, Arial, sans-serif; background:#0f1115; color:#eee; margin:0; padding:2rem; }
   h1 { font-weight: 600; }
-  .status { font-size: 0.9rem; color: #999; margin-bottom: 1.5rem; }
+  .layout { display:flex; gap:2rem; flex-wrap: wrap; }
+  .video-panel { position: relative; width: 640px; height: 480px; }
+  video, canvas.overlay { position: absolute; top:0; left:0; width: 640px; height: 480px; border-radius: 8px; }
+  video { z-index: 1; transform: scaleX(-1); }
+  canvas.overlay { z-index: 2; cursor: crosshair; }
+  .side-panel { flex: 1; min-width: 280px; }
+  .status { font-size: 0.9rem; color: #999; margin-bottom: 1rem; }
   .status.ok { color: #4ade80; }
   .status.bad { color: #f87171; }
-  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-  .card { background:#1b1e26; border-radius: 12px; padding: 1.2rem; }
-  .card .count { font-size: 2.2rem; font-weight: 700; }
-  .card .label { color: #aaa; font-size: 0.9rem; }
-  table { width:100%; border-collapse: collapse; font-size: 0.9rem; }
-  th, td { text-align:left; padding: 0.5rem; border-bottom: 1px solid #2a2d36; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .card { background:#1b1e26; border-radius: 12px; padding: 1rem; }
+  .card .count { font-size: 2rem; font-weight: 700; }
+  .card .label { color: #aaa; font-size: 0.85rem; }
+  table { width:100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 1.5rem; }
+  th, td { text-align:left; padding: 0.4rem; border-bottom: 1px solid #2a2d36; }
   .conf-high { color:#4ade80; } .conf-medium { color:#fbbf24; } .conf-low { color:#f87171; }
+  .calib { background:#1b1e26; border-radius: 12px; padding: 1rem; }
+  .calib label { display:block; margin-bottom:0.4rem; font-size:0.85rem; color:#aaa; }
+  .calib input[type=range] { width: 100%; }
+  #hsvReading { font-family: monospace; background:#0f1115; padding:0.5rem; border-radius:6px; margin-top:0.5rem; }
 </style>
 </head>
 <body>
   <h1>Blood Tube Dashboard</h1>
-  <div id="status" class="status">Connecting...</div>
+  <div id="status" class="status">Requesting camera access...</div>
 
-  <div class="grid">
-    <div class="card">
-      <div class="count" id="total">-</div>
-      <div class="label">Total tubes detected</div>
+  <div class="layout">
+    <div class="video-panel">
+      <video id="video" autoplay playsinline width="640" height="480"></video>
+      <canvas id="overlay" class="overlay" width="640" height="480"></canvas>
+    </div>
+
+    <div class="side-panel">
+      <div class="grid">
+        <div class="card"><div class="count" id="total">-</div><div class="label">Total tubes</div></div>
+      </div>
+      <div class="card"><div class="count" id="unrecognized" style="color:#f87171;">-</div><div class="label">Unrecognized (ignored)</div></div>
+      <div class="grid" id="categoryGrid"></div>
+      <table>
+        <thead><tr><th>Category</th><th>Source</th><th>Confidence</th></tr></thead>
+        <tbody id="tubeRows"></tbody>
+      </table>
+
+      <div class="calib">
+        <label>Detection threshold: <span id="threshVal">60</span></label>
+        <input type="range" id="threshSlider" min="0" max="255" value="60">
+        <p style="font-size:0.8rem;color:#888;">Click the video to sample a cap color's HSV (copy into config.py's CAP_COLOR_RANGES):</p>
+        <div id="hsvReading">Click video to sample...</div>
+      </div>
     </div>
   </div>
 
-  <div class="grid" id="categoryGrid"></div>
-
-  <h3>Detected tubes (this frame)</h3>
-  <table>
-    <thead><tr><th>Category</th><th>Source</th><th>Confidence</th></tr></thead>
-    <tbody id="tubeRows"></tbody>
-  </table>
+<canvas id="captureCanvas" width="640" height="480" style="display:none;"></canvas>
 
 <script>
-async function refresh() {
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const overlayCtx = overlay.getContext('2d');
+const captureCanvas = document.getElementById('captureCanvas');
+const captureCtx = captureCanvas.getContext('2d');
+const statusEl = document.getElementById('status');
+let lastFrameDataUrl = null;
+
+async function startCamera() {
   try {
-    const res = await fetch('/api/counts');
-    const data = await res.json();
-
-    const statusEl = document.getElementById('status');
-    statusEl.textContent = data.camera_ok
-      ? `Live — last updated ${data.last_updated}`
-      : 'Camera not detected — check server console';
-    statusEl.className = 'status ' + (data.camera_ok ? 'ok' : 'bad');
-
-    document.getElementById('total').textContent = data.total_tubes;
-
-    const grid = document.getElementById('categoryGrid');
-    grid.innerHTML = '';
-    for (const [cat, count] of Object.entries(data.by_category)) {
-      grid.innerHTML += `<div class="card"><div class="count">${count}</div><div class="label">${cat}</div></div>`;
-    }
-
-    const rows = document.getElementById('tubeRows');
-    rows.innerHTML = data.tubes.map(t =>
-      `<tr><td>${t.category}</td><td>${t.source}</td><td class="conf-${t.confidence}">${t.confidence}</td></tr>`
-    ).join('');
-  } catch (e) {
-    console.error(e);
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    video.srcObject = stream;
+    statusEl.textContent = 'Camera connected';
+    statusEl.className = 'status ok';
+  } catch (err) {
+    statusEl.textContent = 'Camera access denied: ' + err.message;
+    statusEl.className = 'status bad';
   }
 }
-setInterval(refresh, {{ refresh_ms }});
-refresh();
+
+function captureFrame() {
+  captureCtx.drawImage(video, 0, 0, 640, 480);
+  return captureCanvas.toDataURL('image/jpeg', 0.7);
+}
+
+async function sendFrame() {
+  if (video.readyState < 2) return;
+  const dataUrl = captureFrame();
+  lastFrameDataUrl = dataUrl;
+  try {
+    const res = await fetch('/api/process_frame', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataUrl })
+    });
+    updateDashboard(await res.json());
+  } catch (e) { console.error(e); }
+}
+
+function updateDashboard(data) {
+  document.getElementById('total').textContent = data.total_tubes;
+  document.getElementById('unrecognized').textContent = data.unrecognized_count;
+  const grid = document.getElementById('categoryGrid');
+  grid.innerHTML = '';
+  for (const [cat, count] of Object.entries(data.by_category)) {
+    grid.innerHTML += `<div class="card"><div class="count">${count}</div><div class="label">${cat}</div></div>`;
+  }
+  document.getElementById('tubeRows').innerHTML = data.tubes.map(t =>
+    `<tr><td>${t.category}</td><td>${t.source}</td><td class="conf-${t.confidence}">${t.confidence}</td></tr>`
+  ).join('');
+
+  overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+  overlayCtx.strokeStyle = '#4ade80'; overlayCtx.lineWidth = 2;
+  overlayCtx.font = '14px sans-serif'; overlayCtx.fillStyle = '#4ade80';
+  data.tubes.forEach(t => {
+    const [x, y, w, h] = t.bbox;
+    const mx = overlay.width - x - w; // account for mirrored video
+    overlayCtx.strokeRect(mx, y, w, h);
+    overlayCtx.fillText(t.category, mx, y - 5);
+  });
+}
+
+document.getElementById('threshSlider').addEventListener('input', async (e) => {
+  document.getElementById('threshVal').textContent = e.target.value;
+  await fetch('/api/set_threshold', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value: parseInt(e.target.value) })
+  });
+});
+
+overlay.addEventListener('click', async (e) => {
+  const rect = overlay.getBoundingClientRect();
+  const scaleX = overlay.width / rect.width, scaleY = overlay.height / rect.height;
+  let x = Math.round((e.clientX - rect.left) * scaleX);
+  const y = Math.round((e.clientY - rect.top) * scaleY);
+  x = overlay.width - x; // undo mirroring
+  const dataUrl = lastFrameDataUrl || captureFrame();
+  const res = await fetch('/api/sample_hsv', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: dataUrl, x, y })
+  });
+  const data = await res.json();
+  if (data.h !== undefined) document.getElementById('hsvReading').textContent = `H: ${data.h}  S: ${data.s}  V: ${data.v}`;
+});
+
+startCamera();
+setInterval(sendFrame, 800);
 </script>
 </body>
-</html> 
+</html>

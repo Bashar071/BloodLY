@@ -1,24 +1,48 @@
-"""
-Detects candidate tube regions in a frame using simple contour analysis.
-Works well with a plain, high-contrast tray. For cluttered/variable
-backgrounds, swap this for a trained YOLOv8 detector for real reliability.
-"""
 import cv2
-from config import THRESHOLD_VALUE, MIN_TUBE_AREA, MAX_TUBE_AREA
+import config
 
 
 def find_tubes(frame):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    _, thresh = cv2.threshold(blurred, THRESHOLD_VALUE, 255, cv2.THRESH_BINARY_INV)
-
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    blurred = cv2.GaussianBlur(gray, (7, 7), 0)  # stronger blur suppresses texture noise
+    # Check both polarities. A single inverse threshold only finds dark bottles
+    # and loses clear or brightly colored bottles before classification starts.
+    masks = []
+    for threshold_type in (cv2.THRESH_BINARY_INV, cv2.THRESH_BINARY):
+        _, mask = cv2.threshold(blurred, config.THRESHOLD_VALUE, 255, threshold_type)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+        masks.append(mask)
 
     boxes = []
-    for c in contours:
-        area = cv2.contourArea(c)
-        if MIN_TUBE_AREA <= area <= MAX_TUBE_AREA:
+    for mask in masks:
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for c in contours:
+            area = cv2.contourArea(c)
+            if not (config.MIN_TUBE_AREA <= area <= config.MAX_TUBE_AREA):
+                continue
+
             x, y, w, h = cv2.boundingRect(c)
-            if h > w * 1.1:  # tubes are taller than wide
-                boxes.append((x, y, w, h))
+            if h <= w * config.BOTTLE_MIN_ASPECT_RATIO:
+                continue
+
+            hull_area = cv2.contourArea(cv2.convexHull(c))
+            if hull_area == 0 or (area / hull_area) < config.MIN_SOLIDITY:
+                continue
+
+            candidate = (x, y, w, h)
+            if not any(_boxes_overlap(candidate, existing) for existing in boxes):
+                boxes.append(candidate)
     return boxes
+
+
+def _boxes_overlap(first, second):
+    """Return true when two detections describe substantially the same object."""
+    ax, ay, aw, ah = first
+    bx, by, bw, bh = second
+    left, top = max(ax, bx), max(ay, by)
+    right, bottom = min(ax + aw, bx + bw), min(ay + ah, by + bh)
+    intersection = max(0, right - left) * max(0, bottom - top)
+    smaller_area = min(aw * ah, bw * bh)
+    return smaller_area > 0 and intersection / smaller_area >= 0.5
