@@ -1,4 +1,5 @@
 import cv2
+import numpy as np
 import config
 
 
@@ -29,6 +30,37 @@ def find_tubes(frame):
 
             hull_area = cv2.contourArea(cv2.convexHull(c))
             if hull_area == 0 or (area / hull_area) < config.MIN_SOLIDITY:
+                continue
+
+            candidate = (x, y, w, h)
+            if not any(_boxes_overlap(candidate, existing) for existing in boxes):
+                boxes.append(candidate)
+
+    # Grayscale thresholding loses brightly colored bottles. Add candidates
+    # from the configured color masks so classification can see the bottle.
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    color_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+    for bounds in config.CAP_COLOR_RANGES.values():
+        ranges = bounds if isinstance(bounds, list) else [bounds]
+        color_mask = None
+        for color_range in ranges:
+            lower = np.array(color_range["lower"], dtype=np.uint8)
+            upper = np.array(color_range["upper"], dtype=np.uint8)
+            current = cv2.inRange(hsv, lower, upper)
+            color_mask = current if color_mask is None else cv2.bitwise_or(color_mask, current)
+
+        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, color_kernel, iterations=3)
+        contours, _ = cv2.findContours(color_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if not (config.MIN_TUBE_AREA <= area <= config.MAX_TUBE_AREA * 2):
+                continue
+
+            x, y, w, h = cv2.boundingRect(contour)
+            if h < w * 0.55:
+                continue
+            hull_area = cv2.contourArea(cv2.convexHull(contour))
+            if hull_area == 0 or area / hull_area < 0.45:
                 continue
 
             candidate = (x, y, w, h)

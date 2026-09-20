@@ -13,18 +13,17 @@ PROCESS_EVERY_N_FRAMES = 5
 # --- Tube detection (contour-based) ---
 THRESHOLD_VALUE = 60
 MIN_TUBE_AREA = 800
-MAX_TUBE_AREA = 50000
+MAX_TUBE_AREA = 150000
 
 # --- Cap color categories ---
 CAP_COLOR_RANGES = {
     "A+":  [{"lower": (0, 90, 60), "upper": (8, 255, 255)},
             {"lower": (170, 90, 60), "upper": (180, 255, 255)}],  # red
     "B+":  {"lower": (95, 90, 60), "upper": (130, 255, 255)},     # blue
-    "AB+": {"lower": (18, 90, 60), "upper": (35, 255, 255)},      # yellow
-    "O+":  {"lower": (40, 90, 60), "upper": (85, 255, 255)},      # green
+    "AB+": {"lower": (10, 90, 60), "upper": (24, 255, 255)},      # yellow/orange
+    "O+":  {"lower": (25, 70, 60), "upper": (85, 255, 255)},      # green, including lime shades
 }
 MIN_COLOR_MATCH_RATIO = 0.10   # a cap can occupy only a small part of the bottle crop
-CAP_REGION_FRACTION = 0.35     # prioritize the cap while still seeing colored bottle bodies
 
 
 # --- Barcode ---

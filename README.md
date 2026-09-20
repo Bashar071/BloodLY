@@ -46,6 +46,14 @@ The detection process follows a prioritized pipeline for each frame captured fro
     pip install -r requirements.txt
     ```
 
+    Barcode decoding also requires the native `zbar` library. On Debian or
+    Ubuntu, install it with:
+    ```bash
+    sudo apt install libzbar0
+    ```
+    Without `libzbar0`, the app still starts and uses cap-color classification
+    instead of barcode decoding.
+
 ### 3. Configuration
 
 All major settings are in `config.py`. Before running, you may need to adjust these to fit your specific setup:

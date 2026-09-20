@@ -35,7 +35,7 @@ def classify_tube(crop):
 
     color_match = classify_cap_color(crop)
     if color_match:
-        return color_match, "cap_color", "high"
+        return color_match, "body_color", "high"
 
     if config.ENABLE_GEMINI_FALLBACK:
         result = read_label_with_gemini(crop)

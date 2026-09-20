@@ -5,7 +5,7 @@ which wraps around both ends of the hue scale).
 """
 import cv2
 import numpy as np
-from config import CAP_COLOR_RANGES, MIN_COLOR_MATCH_RATIO, CAP_REGION_FRACTION
+from config import CAP_COLOR_RANGES, MIN_COLOR_MATCH_RATIO
 
 
 def _ranges_for(bounds):
@@ -21,8 +21,13 @@ def classify_cap_color(tube_crop):
         return None
 
     best_match, best_ratio = None, 0.0
-    region_h = max(1, int(h * CAP_REGION_FRACTION))
-    regions = (tube_crop[0:region_h, 0:w], tube_crop)
+    # The cap can have a different color from the liquid/body. Keep the
+    # central body area and ignore the cap, shoulder, and crop edges.
+    top = int(h * 0.20)
+    bottom = max(top + 1, int(h * 0.92))
+    left = int(w * 0.15)
+    right = max(left + 1, int(w * 0.85))
+    regions = (tube_crop[top:bottom, left:right],)
     for region in regions:
         hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
         total_pixels = region.shape[0] * region.shape[1]
